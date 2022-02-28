@@ -223,10 +223,6 @@ py_library(
         for extra in args.extras or []
     ]
 
-    # we treat numpy in a special way, inject a rule for numpy headers
-    if args.package == "numpy":
-        extras_list.append(_get_numpy_headers(args.directory))
-
     extras = "\n".join(extras_list)
     # args.override looks like a list of requirement=replacement
     replacements = dict(rep.split("=") for rep in args.override)
