@@ -50,6 +50,18 @@ def _create_nspkg_init(dirpath):
         nspkg.write("__path__ = __import__('pkgutil').extend_path(__path__, __name__)")
 
 
+_no_whl_pkgs = ['grpc-google-iam-v1', 'google-apitools', 'crcmod', 'docopt', 'dill']
+
+def _is_no_whl_pkg(pkg):
+    for p in _no_whl_pkgs:
+        if p in pkg:
+            return True
+    return False
+
+def _maybe_add_google_namespace(pkg, lines):
+    if 'googleapis-common-protos' in pkg and 'google.cloud' not in lines:
+        lines.append('google.cloud')
+
 def install_package(pkg, directory, pip_args):
     """Downloads wheel for a package. Assumes python binary provided has
     pip and wheel package installed.
@@ -62,7 +74,7 @@ def install_package(pkg, directory, pip_args):
     Returns:
         str: path to the wheel file
     """
-    pip_args = [
+    pip_base_args = [
         "--isolated",
         "--disable-pip-version-check",
         "--target",
@@ -71,9 +83,15 @@ def install_package(pkg, directory, pip_args):
         "--ignore-requires-python",
         "--use-deprecated=legacy-resolver",
         pkg,
-    ] + pip_args
+    ]
     cmd = create_command("install")
-    cmd.main(pip_args)
+    code = cmd.main(pip_base_args + pip_args)
+    if code != 0 and _is_no_whl_pkg(pkg):
+        _cleanup(dir, '*')
+        cmd = create_command("install")
+        code = cmd.main(pip_base_args)
+    if code != 0:
+        raise Exception("unable to install", pip_args)
 
     # need dist-info directory for pkg_resources to be able to find the packages
     dist_info = glob.glob(os.path.join(directory, "*.dist-info"))[0]
@@ -81,7 +99,9 @@ def install_package(pkg, directory, pip_args):
     namespace_packages = os.path.join(dist_info, "namespace_packages.txt")
     if os.path.exists(namespace_packages):
         with open(namespace_packages) as nspkg:
-            for line in nspkg.readlines():
+            lines = nspkg.readlines()
+            _maybe_add_google_namespace(pkg, lines)
+            for line in lines:
                 namespace = line.strip().replace(".", os.sep)
                 if namespace:
                     _create_nspkg_init(os.path.join(directory, namespace))
